@@ -33,6 +33,8 @@ function HomeStack() {
     </Stack.Navigator>
   );
 }
+
+
 function WatchlistStack() {
   return (
     <Stack.Navigator>
@@ -41,6 +43,7 @@ function WatchlistStack() {
     </Stack.Navigator>
   );
 }
+
 function ProfileStack() {
   return (
     <Stack.Navigator>
