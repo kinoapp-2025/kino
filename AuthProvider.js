@@ -1,8 +1,8 @@
 // AuthProvider.js
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signOut, updateProfile } from "firebase/auth";
-import { auth, db } from "./firebase";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { auth, db } from "./firebase";
 
 const AuthCtx = createContext({ user: null, profile: null, loading: true });
 export const useAuth = () => useContext(AuthCtx);
@@ -26,7 +26,7 @@ export default function AuthProvider({ children }) {
             uid: u.uid,
             email: u.email || null,
             displayName: u.displayName || "",
-            username: "",
+            username: u.username || "",
             avatar: u.photoURL || "",
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
