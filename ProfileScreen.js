@@ -1,159 +1,178 @@
+// ProfileScreen estilo IG con contadores de followers
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useState } from "react";
-import { ActivityIndicator, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { collection, getDocs, limit, onSnapshot, query, where } from "firebase/firestore";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Dimensions, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useAuth } from "./AuthProvider";
+import { db } from "./firebase";
 
-const API_KEY = "9fe143b324cff98a21169801db177a79";
+const { width } = Dimensions.get("window");
 const WATCH_KEY = "WATCHLIST_ITEMS_V1";
-const FRIENDS_KEY = "FRIENDS_FOLLOWING_V1";
-const MOCK_FRIENDS = [
-  { id: "1", name: "Ana Pérez", avatar: "https://i.pravatar.cc/100?img=1" },
-  { id: "2", name: "Luis García", avatar: "https://i.pravatar.cc/100?img=2" },
-  { id: "3", name: "María López", avatar: "https://i.pravatar.cc/100?img=3" },
-  { id: "4", name: "Carlos Ruiz", avatar: "https://i.pravatar.cc/100?img=4" },
-  { id: "5", name: "Sofía Díaz", avatar: "https://i.pravatar.cc/100?img=5" },
-];
+const LIKED_KEY = "LIKED_ITEMS_V1";
 
-export default function ProfileScreen({ navigation }) {
-  const [recs, setRecs] = useState([]);
-  const [loadingRecs, setLoadingRecs] = useState(true);
-  const [friends, setFriends] = useState([]);
+function GridItem({ item, onPress }) {
+  const uri = item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null;
+  const size = (width - 4) / 3;
+  return (
+    <TouchableOpacity activeOpacity={0.8} onPress={() => onPress?.(item)} style={{ width: size, height: size, backgroundColor: "#eee" }}>
+      {uri ? <Image source={{ uri }} style={{ width: "100%", height: "100%" }} /> : <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><Text style={{ color: "#888" }}>Sin imagen</Text></View>}
+    </TouchableOpacity>
+  );
+}
 
-  const loadWatchlist = async () => {
-    const raw = await AsyncStorage.getItem(WATCH_KEY);
-    return raw ? JSON.parse(raw) : [];
-  };
+function SectionHeader({ title }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+  );
+}
 
-  const fetchRecommendationsFor = async (seed) => {
-    const type = seed.type || (seed.title ? "movie" : "tv");
-    const url = `https://api.themoviedb.org/3/${type}/${seed.id}/recommendations?api_key=${API_KEY}&language=es-ES&page=1`;
-    const res = await fetch(url);
-    const data = await res.json();
-    const items = (data?.results || []).map(r => ({ ...r, _type: type }));
-    return items;
-  };
+export default function ProfileScreenIGFollowers() {
+  const { user, profile } = useAuth();
+  const navigation = useNavigation();
 
-  const fetchRecommendations = async () => {
-    setLoadingRecs(true);
+  const [liked, setLiked] = useState([]);
+  const [watch, setWatch] = useState([]);
+
+  const [following, setFollowing] = useState([]);
+  const [followers, setFollowers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    // Following -> trae perfiles
+    const unsubA = onSnapshot(collection(db, "follows", user.uid, "following"), async (snap) => {
+      const ids = []; snap.forEach((d) => ids.push(d.id));
+      await fetchUsers(ids, setFollowing);
+    });
+    // Followers -> trae perfiles
+    const unsubB = onSnapshot(collection(db, "followers", user.uid, "by"), async (snap) => {
+      const ids = []; snap.forEach((d) => ids.push(d.id));
+      await fetchUsers(ids, setFollowers);
+    });
+    return () => { unsubA(); unsubB(); };
+  }, [user?.uid]);
+
+  const fetchUsers = async (ids, setter) => {
     try {
-      const watch = await loadWatchlist();
-      let seeds = watch.slice(0, 3); // limita llamadas
-      if (seeds.length === 0) {
-        // fallback: populares si no hay nada en “Quiero ver”
-        const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}&language=es-ES&page=1`);
-        const data = await res.json();
-        setRecs(data.results || []);
-        return;
-      }
-      const all = [];
-      for (const s of seeds) {
-        const r = await fetchRecommendationsFor(s);
-        all.push(...r);
-      }
-      // dedupe por id + título/nombre
-      const map = new Map();
-      for (const it of all) {
-        const key = `${it._type === "tv" || it.name ? "tv" : "movie"}:${it.id}`;
-        if (!map.has(key)) map.set(key, it);
-      }
-      setRecs(Array.from(map.values()).slice(0, 30));
-    } catch (e) {
-      console.error(e);
-      setRecs([]);
+      if (!ids?.length) { setter([]); return; }
+      const usersRef = collection(db, "users");
+      const slice = ids.slice(0, 12);
+      const qUsers = query(usersRef, where("uid", "in", slice), limit(12));
+      const res = await getDocs(qUsers);
+      const arr = []; res.forEach((d) => arr.push(d.data()));
+      setter(arr);
+    } catch {
+      setter([]);
     } finally {
-      setLoadingRecs(false);
+      setLoading(false);
     }
   };
 
-  const loadFriends = async () => {
-    const raw = await AsyncStorage.getItem(FRIENDS_KEY);
-    const ids = raw ? JSON.parse(raw) : [];
-    const list = MOCK_FRIENDS.filter(f => ids.includes(f.id));
-    setFriends(list);
-  };
+  useFocusEffect(useCallback(() => {
+    (async () => {
+      const [l, w] = await Promise.all([
+        AsyncStorage.getItem(LIKED_KEY),
+        AsyncStorage.getItem(WATCH_KEY),
+      ]);
+      setLiked(l ? JSON.parse(l) : []);
+      setWatch(w ? JSON.parse(w) : []);
+    })();
+  }, []));
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchRecommendations();
-      loadFriends();
-    }, [])
-  );
+  const avatar = profile?.avatar || user?.photoURL || `https://i.pravatar.cc/200?u=${user?.uid || "guest"}`;
+  const displayName = profile?.displayName || user?.displayName || "Tu nombre";
+  const username = profile?.username ? `@${profile.username}` : "@usuario";
 
-  const renderRec = ({ item }) => (
-    <TouchableOpacity
-      style={styles.recCard}
-      onPress={() => navigation.navigate("Detalle", { item })}
-    >
-      {item.poster_path ? (
-        <Image source={{ uri: `https://image.tmdb.org/t/p/w300${item.poster_path}` }} style={styles.recImg} />
-      ) : (
-        <View style={[styles.recImg, { backgroundColor: "#ccc", justifyContent: "center", alignItems: "center" }]}>
-          <Text>Sin imagen</Text>
+  const stats = [
+    { label: "Favoritos", value: liked.length },
+    { label: "Pendientes", value: watch.length },
+    { label: "Siguiendo", value: following.length },
+    { label: "Seguidores", value: followers.length },
+  ];
+
+  const Row = ({ data }) => (
+    <FlatList
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      data={data}
+      keyExtractor={(it) => it.uid}
+      contentContainerStyle={{ paddingHorizontal: 12 }}
+      ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
+      renderItem={({ item }) => (
+        <View style={styles.friendCard}>
+          <Image source={{ uri: item.avatar || `https://i.pravatar.cc/100?u=${item.uid}` }} style={styles.friendAvatar} />
+          <Text style={styles.friendName} numberOfLines={1}>{item.displayName || "Sin nombre"}</Text>
+          <Text style={styles.friendUser} numberOfLines={1}>@{item.username || "usuario"}</Text>
         </View>
       )}
-      <Text numberOfLines={2} style={styles.recTitle}>{item.title || item.name}</Text>
-    </TouchableOpacity>
+    />
   );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-      <Text style={styles.h1}>Tu perfil</Text>
-
-      <View style={styles.block}>
-        <View style={styles.blockHeader}>
-          <Text style={styles.h2}>Recomendaciones para ti</Text>
-          <TouchableOpacity onPress={fetchRecommendations}><Text style={styles.link}>Actualizar</Text></TouchableOpacity>
+    <ScrollView style={{ flex: 1, backgroundColor: "#fff" }} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View style={styles.header}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Image source={{ uri: avatar }} style={styles.avatar} />
+          <View style={{ marginLeft: 12 }}>
+            <Text style={styles.name}>{displayName}</Text>
+            <Text style={styles.username}>{username}</Text>
+          </View>
         </View>
-        {loadingRecs ? (
-          <ActivityIndicator size="small" />
-        ) : recs.length === 0 ? (
-          <Text>No hay recomendaciones aún. Añade cosas a “Quiero ver”.</Text>
-        ) : (
-          <FlatList
-            data={recs}
-            renderItem={renderRec}
-            keyExtractor={(it) => `${(it.title ? "m" : "t")}-${it.id}`}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
-            contentContainerStyle={{ paddingVertical: 8 }}
-          />
-        )}
+        <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate("Editar perfil")}>
+          <Text style={styles.editTxt}>Editar perfil</Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.block}>
-        <View style={styles.blockHeader}>
-          <Text style={styles.h2}>Tus amigos</Text>
-          <Text style={{ color: "#777" }}>{friends.length} siguiendo</Text>
-        </View>
-        {friends.length === 0 ? (
-          <Text>No sigues a nadie todavía. Ve a la pestaña “Amigos” para empezar a seguir.</Text>
-        ) : (
-          <View style={{ gap: 12 }}>
-            {friends.map(f => (
-              <View key={f.id} style={styles.friendRow}>
-                <Image source={{ uri: f.avatar }} style={styles.friendAvatar} />
-                <Text style={styles.friendName}>{f.name}</Text>
-              </View>
-            ))}
+      <View style={styles.statsRow}>
+        {stats.map((s) => (
+          <View key={s.label} style={styles.statBox}>
+            <Text style={styles.statValue}>{s.value}</Text>
+            <Text style={styles.statLabel}>{s.label}</Text>
           </View>
-        )}
+        ))}
+      </View>
+
+      <SectionHeader title="Seguidores" />
+      {loading ? <ActivityIndicator style={{ marginVertical: 10 }} /> : <Row data={followers} />}
+
+      <SectionHeader title="Siguiendo" />
+      {loading ? <ActivityIndicator style={{ marginVertical: 10 }} /> : <Row data={following} />}
+
+      <SectionHeader title="Tus favoritos" />
+      <View style={styles.gridWrap}>
+        <FlatList
+          data={liked}
+          numColumns={3}
+          keyExtractor={(it, idx) => `${it.id}-${idx}`}
+          renderItem={({ item }) => <GridItem item={item} />}
+          ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
+          columnWrapperStyle={{ gap: 2 }}
+          scrollEnabled={false}
+        />
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 16 },
-  h1: { fontSize: 24, fontWeight: "800", marginBottom: 12 },
-  h2: { fontSize: 18, fontWeight: "700" },
-  link: { color: "#3498db", fontWeight: "600" },
-  block: { marginTop: 10 },
-  blockHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  recCard: { width: 140 },
-  recImg: { width: 140, height: 200, borderRadius: 12 },
-  recTitle: { marginTop: 6, fontSize: 14, fontWeight: "600" },
-  friendRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#f7f7f7", padding: 10, borderRadius: 12 },
-  friendAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
-  friendName: { fontSize: 16, fontWeight: "600" },
+  header: { padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#eee" },
+  name: { fontSize: 20, fontWeight: "700" },
+  username: { color: "#777", marginTop: 2 },
+  editBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#f0f0f0" },
+  editTxt: { fontWeight: "600" },
+  statsRow: { flexDirection: "row", justifyContent: "space-around", paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: "#eee" },
+  statBox: { alignItems: "center" },
+  statValue: { fontSize: 18, fontWeight: "700" },
+  statLabel: { color: "#777", marginTop: 2 },
+  sectionHeader: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTitle: { fontSize: 18, fontWeight: "700" },
+  friendCard: { width: 110, backgroundColor: "#fafafa", borderRadius: 12, padding: 10, alignItems: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: "#eee" },
+  friendAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#eee" },
+  friendName: { marginTop: 8, fontWeight: "600" },
+  friendUser: { color: "#777", fontSize: 12 },
+  gridWrap: { paddingHorizontal: 2, marginBottom: 10 },
 });

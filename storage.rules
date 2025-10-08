@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+
+    // Solo permitir que cada usuario suba su avatar en avatars/{uid}.(jpg|png)
+    match /avatars/{filename} {
+      allow read: if true;
+      allow write: if isSignedIn()
+        && filename.matches('^' + request.auth.uid + '\\.(jpg|jpeg|png)$')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
