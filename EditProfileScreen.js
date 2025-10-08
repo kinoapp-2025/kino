@@ -62,42 +62,57 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
-  const onSave = async () => {
-    if (!user) return;
-    setErr("");
-    setSaving(true);
-    try {
-      await runTransaction(db, async (tx) => {
-        const userRef = doc(db, "users", user.uid);
-        const snap = await tx.get(userRef);
-        const prev = snap.exists() ? snap.data() : {};
+const onSave = async () => {
+  if (!user) return;
+  setErr("");
 
-        const prevUsername = (prev.username || "").trim().toLowerCase();
-        const nextUsername = (username || "").trim().toLowerCase();
-        if (nextUsername && nextUsername !== prevUsername) {
-          const nextRef = doc(db, "usernames", nextUsername);
-          const nextSnap = await tx.get(nextRef);
-          if (nextSnap.exists()) throw new Error("Ese @usuario ya está en uso");
-          if (prevUsername) tx.delete(doc(db, "usernames", prevUsername));
-          tx.set(nextRef, { uid: user.uid });
-        }
+  const cleanUsername = (username || "").trim().toLowerCase();
 
-        tx.set(userRef, {
-          ...prev,
-          displayName: displayName || "",
-          username: nextUsername || "",
-          avatar: avatar || "",
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-      });
-      Alert.alert("Listo", "Perfil actualizado");
-      navigation.goBack();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+  // 🚨 Validaciones antes de guardar
+  if (!cleanUsername) {
+    setErr("Debes elegir un nombre de usuario (@usuario).");
+    return;
+  }
+  if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+    setErr("El usuario debe tener entre 3 y 20 caracteres, solo letras, números o guiones bajos.");
+    return;
+  }
+
+  setSaving(true);
+  try {
+    await runTransaction(db, async (tx) => {
+      const userRef = doc(db, "users", user.uid);
+      const snap = await tx.get(userRef);
+      const prev = snap.exists() ? snap.data() : {};
+
+      const prevUsername = (prev.username || "").trim().toLowerCase();
+
+      if (cleanUsername !== prevUsername) {
+        const nextRef = doc(db, "usernames", cleanUsername);
+        const nextSnap = await tx.get(nextRef);
+        if (nextSnap.exists()) throw new Error("Ese @usuario ya está en uso");
+        // Borrar anterior si existía
+        if (prevUsername) tx.delete(doc(db, "usernames", prevUsername));
+        // Crear nuevo registro
+        tx.set(nextRef, { uid: user.uid });
+      }
+
+      tx.set(userRef, {
+        ...prev,
+        displayName: displayName || "",
+        username: cleanUsername,
+        avatar: avatar || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    });
+    Alert.alert("Listo", "Perfil actualizado");
+    navigation.goBack();
+  } catch (e) {
+    setErr(e.message);
+  } finally {
+    setSaving(false);
+  }
+};
 
   return (
     <View style={styles.container}>

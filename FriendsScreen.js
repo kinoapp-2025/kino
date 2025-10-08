@@ -131,8 +131,8 @@ export default function FriendsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
-  searchRow: { flexDirection: "row", marginBottom: 10 },
+  container: { flex: 1, padding: 16, backgroundColor: "#fff"  },
+  searchRow: { flexDirection: "row", marginBottom: 10, marginTop: 70 },
   searchInput: { flex: 1, borderWidth: 1, borderColor: "#ddd", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   searchBtn: { marginLeft: 8, paddingHorizontal: 14, borderRadius: 10, backgroundColor: "#3498db", alignItems: "center", justifyContent: "center" },
   searchBtnTxt: { color: "#fff", fontWeight: "700" },

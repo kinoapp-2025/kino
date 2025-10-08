@@ -1,7 +1,7 @@
 // SignInScreen.js
-import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { auth } from "./firebase";
 
 export default function SignInScreen({ navigation }) {
